@@ -11,7 +11,7 @@
 
 | Day | Date | Task | Time box | Done when |
 |-----|------|------|----------|-----------|
-| 1 | Mon 07-14 | Write Service: `POST /urls`, `GET/DELETE /urls/:code` + code generation | 35 min | bad URL → 422, create → 201 + code, dup handling matches your written decision |
+| 1 | Mon 07-14 | Write Service: `POST /urls`, `GET /urls` (list, cursor-paginated), `GET/DELETE /urls/:code` + code generation | 35 min | bad URL → 422, create → 201 + code, list returns only caller's own links + capped limit, dup handling matches your written decision |
 | 2 | Tue 07-15 | Read Service (separate process): `GET /:code` → 302 | 35 min | live → 302, unknown → 404, expired → 410, deleted → 404 |
 | 3 | Wed 07-16 | Written defense: index type, 301 vs 302, collision math @ 1M/100M/1B | 30 min | 3 answers written, no notes |
 | 4 | Thu 07-17 | Cold rebuild: code-gen + collision only, blank file | 35 min | passes Day 1 tests, no peeking |
@@ -39,8 +39,8 @@
 |-----|------|------|----------|-----------|
 | 1 | Mon 07-28 | Gateway routing/proxy: write routes → Write svc, `GET /:code` → Read svc | 35 min | 302 + Location forwarded unchanged; internal ports not public |
 | 2 | Tue 07-29 | Rate limiter at gateway: sliding-window, Redis, per key/IP | 35 min | N+1th → 429 + Retry-After; window slides; works across instances |
-| 3 | Wed 07-30 | Auth at gateway + trusted `X-User-Id` injection | 35 min | write w/o key → 401 (never reaches svc); redirect public |
-| 4 | Thu 07-31 | Cold rebuild: rate limiter | 35 min | passes Day 2 tests, blank file |
+| 3 | Wed 07-30 | Auth Service: register + login (hash password, issue access + refresh token) | 35 min | dup email → 409; wrong password → 401; login returns JWT access token + opaque refresh token |
+| 4 | Thu 07-31 | Gateway JWT verification + `/auth/refresh` + `/auth/logout`, trusted `X-User-Id` injection | 35 min | write w/o/expired token → 401 (never reaches svc); refresh issues new access token; logout revokes refresh token |
 | 5 | Fri 08-01 | Outreach + blockers log | — | log written |
 
 **Retest (spaced):** re-run Week 2 cache-aside cold.
@@ -69,8 +69,9 @@
 | Stampede / single-flight | 07-22 | | |
 | Async analytics queue | 07-23 | | |
 | Gateway routing | 07-28 | | |
-| Rate limiter | 07-29 | 07-31 | Week 3 spaced |
-| Auth / trust boundary | 07-30 | | |
+| Rate limiter | 07-29 | | |
+| Auth: register/login | 07-30 | | |
+| JWT verify / refresh / logout | 07-31 | | |
 | Distributed id gen | 08-04 | 08-05 | |
 
 **Rule:** component not cold-passed twice, spaced ≥3 days = not learned. Reschedule it into the next Day-5 slot.

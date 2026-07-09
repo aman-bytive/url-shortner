@@ -20,12 +20,23 @@ Coupling them into one service means the redirect path pays for write-path compl
 
 The only public entry point. Responsibilities:
 
-- **Routing** — `POST /urls`, `PUT/DELETE /urls/:code`, `GET /urls/:code` (metadata) → Write Service. `GET /:code` (redirect) → Read Service.
-- **Authentication** — validates API key / JWT on write routes. Redirect route is public.
-- **Rate limiting** — sliding-window per API key (or per IP for anonymous redirect traffic), state in Redis so it works across gateway instances.
-- **Trust boundary** — strips any client-supplied identity headers and injects a trusted `X-User-Id` derived from the validated credential. Downstream services trust this header *only* because it arrives from the gateway on the internal network.
+- **Routing** — `POST/PUT/DELETE /urls*`, `GET /urls` (list), `GET /urls/:code` (metadata) → Write Service. `GET /:code` (redirect) → Read Service. `POST /auth/*` → Auth Service.
+- **Authentication** — verifies the access-token JWT signature on write routes (local check, no DB hit). Redirect route is public. Register/login/refresh route to the Auth Service.
+- **Rate limiting** — sliding-window per authenticated user (or per IP for anonymous/redirect traffic), state in Redis so it works across gateway instances.
+- **Trust boundary** — strips any client-supplied identity headers and injects a trusted `X-User-Id` derived from the verified JWT's `userId` claim. Downstream services trust this header *only* because it arrives from the gateway on the internal network.
 
-The gateway holds no business logic and no database connection. It is stateless (rate-limit state lives in Redis), so it scales by adding instances behind a load balancer.
+The gateway holds no business logic and no database connection (JWT verification is stateless — signature check only). It is stateless (rate-limit state lives in Redis), so it scales by adding instances behind a load balancer.
+
+### Auth Service (`services/auth`, port 8083)
+
+Owns account lifecycle and token issuance.
+
+- `POST /auth/register` — create account, hash password (bcrypt/argon2).
+- `POST /auth/login` — verify password, issue access token (JWT, 15 min) + refresh token (opaque, 30 days, stored hashed).
+- `POST /auth/refresh` — exchange a valid refresh token for a new access token.
+- `POST /auth/logout` — revoke a refresh token.
+
+Only this service and the gateway touch the JWT signing secret. Write/Read services never see credentials — they only receive the gateway-injected `X-User-Id`. See [ADR-0006](adr/0006-jwt-access-refresh.md).
 
 ### Write Service (`services/write`, port 8081)
 
@@ -67,10 +78,28 @@ Three distinct uses, logically separate keyspaces:
 
 ## Request flows
 
+### Register / login
+
+```
+client → gateway (rate-limit only, no auth) → auth svc
+  → (register) hash password → INSERT into users → 201
+  → (login) verify password → issue access token (JWT) + refresh token
+      → INSERT into refresh_tokens (hashed) → 200 { accessToken, refreshToken }
+```
+
+### Refresh an access token
+
+```
+client → gateway → auth svc
+  → look up refresh_tokens by hash(token)
+      ├─ valid, not expired/revoked → issue new access token → 200
+      └─ invalid/expired/revoked    → 401 INVALID_REFRESH_TOKEN
+```
+
 ### Create a short URL
 
 ```
-client → gateway (auth + rate-limit) → write svc
+client → gateway (verify JWT + rate-limit) → write svc
   → validate URL
   → generate short_code
   → INSERT into urls

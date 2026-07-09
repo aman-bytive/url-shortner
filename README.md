@@ -6,18 +6,19 @@ The system is split into independent services behind an API gateway so the read 
 
 ```
           ┌──────────────┐
-client ──▶│  API Gateway │  auth · rate-limit · routing
+client ──▶│  API Gateway │  auth (JWT verify) · rate-limit · routing
           └──────┬───────┘
-         write   │   read
-        ┌────────┴────────┐
-        ▼                 ▼
- ┌─────────────┐   ┌─────────────┐
- │ Write Svc   │   │ Read Svc    │
- │ create/edit │   │ redirect    │
- └──────┬──────┘   └──────┬──────┘
-        │            cache │
-        └────────┬─────────┘
-                 ▼
+     auth  │ write │   read
+     ┌─────┘  ┌────┴───┐  └────┐
+     ▼        ▼        ▼       ▼
+┌─────────┐┌─────────┐    ┌─────────┐
+│Auth Svc ││Write Svc│    │Read Svc │
+│register ││create/  │    │redirect │
+│login    ││edit     │    │         │
+└────┬────┘└────┬────┘    └────┬────┘
+     │          │          cache │
+     └──────────┴─────────┬──────┘
+                          ▼
           ┌────────────┐   miss   ┌─────────────┐
           │   Redis    │ ───────▶ │ PostgreSQL  │
           │  cache     │          │ source of   │
@@ -40,8 +41,8 @@ client ──▶│  API Gateway │  auth · rate-limit · routing
 
 ## Stack
 
-- **Node.js + Express** — all three services
-- **PostgreSQL** — source of truth for URL mappings
+- **Node.js + Express** — all four services
+- **PostgreSQL** — source of truth for URL mappings, users, refresh tokens
 - **Redis** — hot-key cache + rate-limit counters + async analytics queue
 - **Docker Compose** — local orchestration
 
@@ -57,19 +58,34 @@ psql "$DATABASE_URL" -f db/schema.sql
 # 3. install deps (workspace root)
 npm install
 
-# 4. run all three services + worker
+# 4. run all services + worker
 npm run dev
 
-# 5. shorten a URL (through the gateway)
+# 5. register + login
+curl -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"prachi@bytive.in","password":"correct-horse-1"}'
+
+curl -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"prachi@bytive.in","password":"correct-horse-1"}'
+# → 200 { "accessToken":"...", "refreshToken":"...", "expiresIn":900 }
+
+# 6. shorten a URL (through the gateway, with the access token)
 curl -X POST http://localhost:8080/urls \
-  -H 'Authorization: Bearer dev-key' \
+  -H 'Authorization: Bearer <accessToken>' \
   -H 'Content-Type: application/json' \
   -d '{"longUrl":"https://example.com/some/very/long/path?a=1&b=2"}'
 # → 201 { "shortCode":"9aF2kQ", "shortUrl":"http://localhost:8080/9aF2kQ", ... }
 
-# 6. follow the redirect
+# 7. follow the redirect
 curl -i http://localhost:8080/9aF2kQ
 # → 302 Location: https://example.com/some/very/long/path?a=1&b=2
+
+# 8. refresh an expired access token
+curl -X POST http://localhost:8080/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refreshToken":"<refreshToken>"}'
 ```
 
 ## Ports
@@ -77,6 +93,7 @@ curl -i http://localhost:8080/9aF2kQ
 | Service | Port | Public? |
 |---------|------|---------|
 | API Gateway | 8080 | yes — only public entry point |
+| Auth Service | 8083 | no — internal |
 | Write Service | 8081 | no — internal |
 | Read Service | 8082 | no — internal |
 | PostgreSQL | 5432 | no |
@@ -101,6 +118,7 @@ url-shortner/
 │   └── adr/
 ├── services/
 │   ├── gateway/
+│   ├── auth/
 │   ├── write/
 │   ├── read/
 │   └── worker/          # drains the analytics queue

@@ -71,6 +71,7 @@ Standalone service. `POST /urls`.
 | Method | Path | Acceptance criteria |
 |--------|------|--------------------|
 | POST | /urls | Validate URL format BEFORE DB write. 201 + `{ shortCode, shortUrl, longUrl }`. Bad URL → 422. |
+| GET | /urls | List caller's own links, own rows only (scope by authenticated user, never a query param). `?cursor=&limit=`, capped limit (max 100). Empty → 200 + `[]`, never 404. |
 | GET | /urls/:code | Metadata (not redirect) → 200 + object. Not found → 404 (never 200 + null). |
 | DELETE | /urls/:code | Soft delete. Return 204 or 200 — pick one, be consistent. |
 
@@ -164,15 +165,24 @@ Sliding-window, per-API-key (or per-IP for anonymous), backed by **Redis**. Appl
 - Different limits for write vs read routes (write is cheaper to abuse-cap). Justify the numbers.
 - State lives in Redis, works across multiple gateway instances.
 
-### Day 3 — Auth at the gateway, cold
-API-key (or JWT) check at gateway. Write routes require auth; redirect (`GET /:code`) is public.
+### Day 3 — Auth Service: register + login, cold
+Standalone service (or module). `POST /auth/register`, `POST /auth/login`.
 
 **Acceptance criteria:**
-- Missing/invalid key on a write route → 401, request never reaches Write Service.
-- Public redirect works with no auth.
-- Gateway injects a trusted `user_id` header downstream; Write Service trusts it **only** from the gateway. Explain the trust boundary.
+- Register: hash password before storing (bcrypt/argon2) — never plaintext, never even in logs. Duplicate email → 409.
+- Login: verify password against hash. Wrong password → 401, same error whether email exists or not (don't leak which).
+- Login issues an **access token** (JWT, short TTL e.g. 15 min, signed, carries `userId`) and a **refresh token** (opaque random string, long TTL e.g. 30 days, stored **hashed** in a `refresh_tokens` table).
+- Write down: why hash the refresh token in DB too, not just the password?
 
-### Day 4 — Cold rebuild the rate limiter, 35 min (second pass = where retention shows).
+### Day 4 — Access token verification at the gateway + refresh/logout, cold
+Gateway verifies the JWT signature locally (no DB call) on write routes. Add `POST /auth/refresh` and `POST /auth/logout`.
+
+**Acceptance criteria:**
+- Missing/invalid/expired access token on a write route → 401, request never reaches Write Service.
+- Public redirect works with no auth.
+- Gateway injects a trusted `user_id` header downstream (from the verified JWT claim, not client-supplied); Write Service trusts it **only** from the gateway. Explain the trust boundary.
+- `/auth/refresh`: valid, non-expired, non-revoked refresh token → new access token. Expired/revoked/unknown → 401.
+- `/auth/logout`: marks the refresh token revoked. Old access tokens already issued still work until they naturally expire — write down why that's acceptable (or not) for this system.
 
 ### Day 5 — Outreach + blockers log.
 
@@ -199,6 +209,7 @@ Before recording, write the 3 hardest questions an interviewer asks:
 - Read/write split — why, and how each scales independently?
 - Cache invalidation + stampede — walk the hot-key path.
 - Code generation across shards — how do you guarantee global uniqueness without a bottleneck?
+- Access + refresh token split — why short-TTL JWT + longer opaque refresh, and what logout actually revokes.
 Confirm your unscripted answer hits all three.
 
 ### Day 4 — Cold rebuild of weakest component across all 4 weeks.

@@ -5,7 +5,7 @@ All external traffic goes through the **API Gateway** at `http://localhost:8080`
 ## Conventions
 
 - **Base URL:** `http://localhost:8080` (gateway).
-- **Auth:** write routes require `Authorization: Bearer <api-key>`. The redirect route is public.
+- **Auth:** write routes require `Authorization: Bearer <access-token>` (short-lived JWT from `/auth/login` or `/auth/refresh`). The redirect route is public. See [Auth API](#auth-api) below.
 - **Content type:** `application/json` for request/response bodies (redirects have no body).
 - **Error shape** (every error, everywhere):
 
@@ -31,6 +31,88 @@ All external traffic goes through the **API Gateway** at `http://localhost:8080`
 ### 301 vs 302
 
 Redirects use **302 (Found, temporary)** by default. A 301 is cached aggressively by browsers and proxies, which means later redirects never reach the Read Service — breaking click analytics and making edits/deletes invisible to already-cached clients. 302 keeps every hit flowing through the service. Set `?permanent=true` on create to opt into 301 for links that will never change and don't need analytics.
+
+---
+
+## Auth API
+
+Handled by the gateway (or a dedicated Auth Service behind it — see [architecture.md](architecture.md#auth-service)). Issues short-lived **access tokens** (JWT, 15 min) and long-lived **refresh tokens** (opaque, 30 days, stored hashed in `refresh_tokens`).
+
+### `POST /auth/register`
+
+**Request**
+```json
+{ "email": "prachi@bytive.in", "password": "min-8-chars" }
+```
+
+**Responses**
+
+`201 Created`
+```json
+{ "userId": 42, "email": "prachi@bytive.in" }
+```
+
+| Failure | Status | `error.code` |
+|---------|--------|--------------|
+| email already registered | 409 | `EMAIL_TAKEN` |
+| email malformed / password < 8 chars | 422 | `VALIDATION_ERROR` |
+
+Password hashed (bcrypt/argon2) before storage. Plaintext never touches the DB or logs.
+
+### `POST /auth/login`
+
+**Request**
+```json
+{ "email": "prachi@bytive.in", "password": "min-8-chars" }
+```
+
+**Responses**
+
+`200 OK`
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+  "refreshToken": "8f3b2c1a-...",
+  "expiresIn": 900
+}
+```
+
+| Failure | Status | `error.code` |
+|---------|--------|--------------|
+| wrong email/password | 401 | `INVALID_CREDENTIALS` |
+
+A new `refresh_tokens` row is created per login (per-device/session). `accessToken` is a signed JWT carrying `{ userId, exp }` — the gateway verifies its signature locally, no DB hit per request.
+
+### `POST /auth/refresh`
+
+**Request**
+```json
+{ "refreshToken": "8f3b2c1a-..." }
+```
+
+**Responses**
+
+`200 OK`
+```json
+{ "accessToken": "eyJhbGciOiJIUzI1NiJ9...", "expiresIn": 900 }
+```
+
+| Failure | Status | `error.code` |
+|---------|--------|--------------|
+| unknown / expired / revoked refresh token | 401 | `INVALID_REFRESH_TOKEN` |
+
+Refresh token is **not** rotated by default (see [ADR-0006](adr/0006-jwt-access-refresh.md)); it stays valid until its own expiry or explicit logout.
+
+### `POST /auth/logout`
+
+Auth required (access token).
+
+**Request**
+```json
+{ "refreshToken": "8f3b2c1a-..." }
+```
+
+Sets `revoked_at` on the matching `refresh_tokens` row. `204 No Content`. Access tokens already issued remain valid until they naturally expire (≤15 min) — logout is not instant revocation of access, only of future refreshes. See [ADR-0006](adr/0006-jwt-access-refresh.md) for that trade-off.
 
 ---
 
@@ -69,9 +151,40 @@ Auth required.
 | `longUrl` missing/not a valid http(s) URL | 422 | `VALIDATION_ERROR` |
 | `customCode` already taken | 409 | `CODE_TAKEN` |
 | `customCode` fails charset/length rules | 422 | `VALIDATION_ERROR` |
-| No/invalid API key | 401 | `UNAUTHORIZED` |
+| No/invalid/expired access token | 401 | `UNAUTHORIZED` |
 
 **Idempotency / dedup:** submitting the same `longUrl` twice by default returns a **new** code each time (a user may want distinct links for distinct campaigns). To dedup, pass `dedup=true` — the service returns the existing code for that `(user_id, long_url)` pair if one exists. See [ADR-0004](adr/0004-dedup-policy.md).
+
+### `GET /urls` — list the caller's URLs
+
+Auth required. Returns the authenticated user's own links only (scoped by `X-User-Id`, never a query param — can't list someone else's).
+
+**Query params:** `?cursor=&limit=` (cursor/keyset pagination, sorted by `created_at DESC, id DESC`).
+
+`200 OK`
+```json
+{
+  "items": [
+    {
+      "shortCode": "9aF2kQ",
+      "longUrl": "https://example.com/...",
+      "clickCount": 1423,
+      "createdAt": "2026-07-09T10:00:00Z",
+      "expiresAt": null,
+      "isDeleted": false
+    }
+  ],
+  "nextCursor": "MjAyNi0wNy0wOVQxMDowMDowMFp8NDI="
+}
+```
+
+**Acceptance rules:**
+- `limit` capped (default 20, max 100) — `limit=100000` gets clamped, not OOM.
+- No links yet → `200 { "items": [], "nextCursor": null }`, never 404.
+- Deleted links excluded by default; `?includeDeleted=true` shows them (owner audit view only).
+- `nextCursor: null` means last page.
+
+Backed by `urls_user_recent` index (`user_id, created_at DESC WHERE NOT is_deleted`) — see [data-model.md](data-model.md).
 
 ### `GET /urls/:code` — fetch metadata (not a redirect)
 
@@ -131,12 +244,13 @@ Every successful resolve emits a click event to the analytics queue asynchronous
 
 ## Rate limits
 
-Enforced at the gateway, sliding-window, per API key (authenticated) or per IP (anonymous redirect traffic).
+Enforced at the gateway, sliding-window, per authenticated `userId` (from access token) or per IP (anonymous/redirect traffic).
 
 | Route class | Default limit |
 |-------------|---------------|
-| Write (`POST/PUT/DELETE /urls`) | 60 req / min / key |
-| Metadata (`GET /urls/:code`) | 600 req / min / key |
+| Auth (`POST /auth/*`) | 10 req / min / IP |
+| Write (`POST/PUT/DELETE /urls`) | 60 req / min / user |
+| Metadata (`GET /urls/:code`) | 600 req / min / user |
 | Redirect (`GET /:code`) | 6000 req / min / IP |
 
 Exceeding a limit:
