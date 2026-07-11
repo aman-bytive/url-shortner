@@ -32,6 +32,7 @@ Per-service:
 | `WRITE_PORT` | `8081` | write |
 | `READ_PORT` | `8082` | read |
 | `JWT_SECRET` / `API_KEYS` | — | gateway (auth) |
+| `CODE_COUNTER_KEY` | `urls:id_counter` | write (Redis `INCR` key for code-gen) |
 | `CACHE_TTL_S` | `86400` | read |
 | `NEG_TTL_S` | `60` | read |
 | `RL_WRITE_PER_MIN` | `60` | gateway |
@@ -98,7 +99,8 @@ Read/Write share only the DB+Redis contract, so they roll independently.
 | `click_count` frozen | worker dead | restart worker; queue drains automatically |
 | Mass 404 on valid links | bad cache invalidation / wrong TTL | check `url:{code}` in Redis; flush affected keys |
 | 429 storm on redirects | limit too tight or bot | raise `RL_READ_PER_MIN` or block IP upstream |
-| Duplicate `short_code` error | distributed id gen misconfigured | verify id-range/snowflake instance ids are unique |
+| Duplicate `short_code` error | Redis counter lost/reset state (e.g. lost AOF, manual `SET` on the counter key) | check `urls:id_counter` current value vs max issued id in DB; if regressed, bump it forward past the max before allowing more creates |
+| Creates failing, redirects fine | Redis down (counter unavailable) | writes fail closed by design — restore Redis; do not fall back to an in-app counter, it reintroduces the race Redis was solving |
 
 ### Backups
 - Postgres: daily base backup + WAL archiving (PITR).

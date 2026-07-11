@@ -10,3 +10,4 @@ Each ADR captures one locked decision, the context that forced it, and the conse
 | [0004](0004-dedup-policy.md) | New code per create by default; dedup opt-in |
 | [0005](0005-soft-delete.md) | Soft delete, codes never reused |
 | [0006](0006-jwt-access-refresh.md) | JWT access token + opaque refresh token, no rotation |
+| [0007](0007-redis-counter-code-generation.md) | Redis atomic counter (INCR) for short-code generation |

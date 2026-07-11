@@ -13,8 +13,8 @@
 |-----|------|------|----------|-----------|
 | 1 | Mon 07-14 | Write Service: `POST /urls`, `GET /urls` (list, cursor-paginated), `GET/DELETE /urls/:code` + code generation | 35 min | bad URL → 422, create → 201 + code, list returns only caller's own links + capped limit, dup handling matches your written decision |
 | 2 | Tue 07-15 | Read Service (separate process): `GET /:code` → 302 | 35 min | live → 302, unknown → 404, expired → 410, deleted → 404 |
-| 3 | Wed 07-16 | Written defense: index type, 301 vs 302, collision math @ 1M/100M/1B | 30 min | 3 answers written, no notes |
-| 4 | Thu 07-17 | Cold rebuild: code-gen + collision only, blank file | 35 min | passes Day 1 tests, no peeking |
+| 3 | Wed 07-16 | Written defense: index type, 301 vs 302, why Redis `INCR` guarantees no duplicate counter value | 30 min | 3 answers written, no notes |
+| 4 | Thu 07-17 | Cold rebuild: Redis counter + base62 code-gen only, blank file | 35 min | passes Day 1 tests, no peeking |
 | 5 | Fri 07-18 | Outreach + blockers log | — | log written |
 
 ---
@@ -51,9 +51,9 @@
 
 | Day | Date | Task | Time box | Done when |
 |-----|------|------|----------|-----------|
-| 1 | Mon 08-04 | Distributed id / code gen, standalone (id-range or snowflake) | 35 min | unique ids across 2 instances, no per-write central call |
-| 2 | Tue 08-05 | Wire into Write Service + **same-day cold rebuild** | 30 min | concurrent creates across 2 instances → zero dup short_code |
-| 3 | Wed 08-06 | Recorded unscripted walkthrough | 30 min | answers read/write split, cache stampede, sharded uniqueness |
+| 1 | Mon 08-04 | Prove Redis counter holds under 2 concurrent Write Service instances (no new build — stress test) | 35 min | zero dup short_code; written ceiling estimate for Redis `INCR` throughput |
+| 2 | Tue 08-05 | Counter durability drill: kill/restart Redis mid-run, verify AOF recovery + `UNIQUE` constraint backstop | 30 min | counter resumes correctly; forced regression caught by DB constraint, not silently accepted |
+| 3 | Wed 08-06 | Recorded unscripted walkthrough | 30 min | answers read/write split, cache stampede, Redis-counter uniqueness |
 | 4 | Thu 08-07 | Cold rebuild of weakest component across all 4 weeks | 35 min | passes its acceptance tests |
 | 5 | Fri 08-08 | Final blockers log + decide extend/repeat | — | log written |
 
@@ -72,6 +72,6 @@
 | Rate limiter | 07-29 | | |
 | Auth: register/login | 07-30 | | |
 | JWT verify / refresh / logout | 07-31 | | |
-| Distributed id gen | 08-04 | 08-05 | |
+| Redis counter code-gen (multi-instance + durability) | 08-04 | 08-05 | |
 
 **Rule:** component not cold-passed twice, spaced ≥3 days = not learned. Reschedule it into the next Day-5 slot.

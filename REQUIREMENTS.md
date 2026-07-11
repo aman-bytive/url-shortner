@@ -75,10 +75,12 @@ Standalone service. `POST /urls`.
 | GET | /urls/:code | Metadata (not redirect) → 200 + object. Not found → 404 (never 200 + null). |
 | DELETE | /urls/:code | Soft delete. Return 204 or 200 — pick one, be consistent. |
 
-**Short-code generation — decide and defend one:**
-- Base62 of an auto-increment ID (short, sequential, guessable).
-- Random N-char base62 + uniqueness check + retry on collision.
-- Hash(longUrl) truncated (dedup identical URLs, but collision handling required).
+**Short-code generation (locked): Redis `INCR` + base62**
+- Single Redis counter key, `INCR` on every create → atomic, single-threaded, no two calls ever get the same value.
+- Encode the returned integer as base62 → short code. No collision check, no retry needed for generated codes.
+- Custom/vanity codes (`customCode`) still go through insert-and-catch-unique-violation (they bypass the counter).
+- Write down: why does this scale to multiple Write Service instances without extra coordination? (hint: where does the atomicity guarantee actually come from — Redis, or your app code?)
+- Write down: what happens if Redis loses the counter's state — what's your backstop against reissuing a used code?
 
 **Acceptance criteria:**
 - Same long URL submitted twice — decide: dedup to same code, or new code each time? Write down which and why. Test matches your decision.
@@ -98,10 +100,10 @@ Separate process/port. `GET /:code` → **301/302 redirect** to long_url.
 ### Day 3 — Defend in writing
 - `short_code` index type + why.
 - 301 vs 302 for redirect — cache implications, and which you'd pick for an analytics-driven shortener.
-- Collision probability for your code scheme at 1M / 100M / 1B URLs. Do the math.
+- Why Redis `INCR` guarantees no two instances ever get the same counter value — walk through what "single-threaded" actually buys you here vs. an in-app counter variable.
 
 ### Day 4 — Cold rebuild, 35 min
-Rebuild the code-generation + collision handling only. Blank file. No peeking at Day 1.
+Rebuild the code-generation (Redis counter + base62 encode) only. Blank file. No peeking at Day 1.
 
 ### Day 5 — Outreach + blockers log.
 
@@ -192,23 +194,26 @@ Gateway verifies the JWT signature locally (no DB call) on write routes. Add `PO
 
 **Client ask:** "Millions of URLs, multiple write instances. No two ever collide. Walk us through it."
 
-### Day 1 — Distributed ID / code generation, cold, standalone
-Auto-increment breaks across multiple write instances / shards. Build one:
-- Pre-allocated ID ranges per instance (counter block from Redis/DB), or
-- Snowflake-style ID → base62, or
-- Random + uniqueness check with bounded retry.
-
-### Day 2 — Wire in as the Write Service code generator. **Same-day cold rebuild, 30 min** — least-reinforced piece before a recorded demo needs 2 reps.
+### Day 1 — Prove the Redis counter holds under multi-instance load, cold
+Your Week 1 short-code generator (Redis `INCR` + base62) is already the distributed-id solution — don't rebuild it. Run 2 Write Service instances against the same Redis and DB.
 
 **Acceptance criteria:**
-- Fire concurrent creates across 2 write instances. Zero duplicate `short_code` in DB.
-- No single-point counter that serializes every write (or if there is, justify the throughput ceiling).
+- Fire concurrent creates across both instances. Zero duplicate `short_code` in DB.
+- Write down: where does the throughput ceiling actually sit — is it Redis `INCR`, or something else? Estimate `INCR` ops/sec on one Redis node and compare to this project's realistic write volume ([scaling.md](docs/scaling.md)).
+
+### Day 2 — Counter durability failure drill, cold
+Kill Redis mid-run (data loss scenario), restart it, resume creates.
+
+**Acceptance criteria:**
+- If Redis persistence (`--appendonly yes`) is working, counter resumes from where it left off — no reissued codes.
+- Simulate a regression (force the counter backward) — confirm the `UNIQUE(short_code)` constraint on `urls` rejects the resulting duplicate INSERT rather than silently overwriting a row.
+- Write down: what would you alert on in production if this constraint ever fires?
 
 ### Day 3 — Recorded unscripted walkthrough.
 Before recording, write the 3 hardest questions an interviewer asks:
 - Read/write split — why, and how each scales independently?
 - Cache invalidation + stampede — walk the hot-key path.
-- Code generation across shards — how do you guarantee global uniqueness without a bottleneck?
+- Code generation across instances — how does one Redis `INCR` guarantee global uniqueness, and where's the ceiling?
 - Access + refresh token split — why short-TTL JWT + longer opaque refresh, and what logout actually revokes.
 Confirm your unscripted answer hits all three.
 

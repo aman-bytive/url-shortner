@@ -26,7 +26,7 @@ Assume: 100M new URLs/month, read:write ratio 100:1.
 |------|----------|-------|
 | Gateway | add instances | stateless; rate-limit state in Redis |
 | Read Service | add instances | stateless; hottest tier |
-| Write Service | add instances | needs distributed id gen (below) |
+| Write Service | add instances | shares one Redis counter for id-gen — see [short-codes.md](short-codes.md), already multi-instance-safe |
 | Redis | replica for reads / cluster shard by `code` | cache is rebuildable — lose it, warm it back from DB |
 | Postgres | read replicas, then shard | see below |
 
@@ -36,7 +36,7 @@ When one primary can't hold the write volume or dataset, shard the `urls` table 
 
 - **Shard key:** `short_code` (redirect always knows the code — routes directly to the owning shard).
 - **Routing:** consistent hashing over shards so adding a shard moves only `1/N` of keys, not everything.
-- **ID generation must go distributed first** (id-range or snowflake — see [short-codes.md](short-codes.md)), because a per-shard auto-increment would collide across shards.
+- **ID generation needs no change.** The Redis `INCR` counter is already global and shared by every Write Service instance — sharding Postgres doesn't introduce a new uniqueness problem, since ids never came from per-shard auto-increment in the first place. If the counter itself becomes the bottleneck at extreme scale, partition it into N sub-counters (e.g. `urls:id_counter:{0..N}`, round-robin or hash-assigned) — not because of sharding, but because a single Redis key has a throughput ceiling.
 
 Consistent hashing recap (interview-grade):
 - Node join/leave moves only the keys between the new node and its successor on the ring — `~keys/N`, not a full reshuffle.
@@ -47,7 +47,7 @@ Consistent hashing recap (interview-grade):
 
 | Failure | Effect | Mitigation |
 |---------|--------|-----------|
-| Redis down | every redirect misses → all hit Postgres | Read Service falls back to DB directly; add Redis replica/Sentinel; DB must survive the miss storm (connection pool cap + single-flight) |
+| Redis down | every redirect misses → all hit Postgres; **also blocks all creates** (id counter lives here) | Read Service falls back to DB directly; add Redis replica/Sentinel; DB must survive the miss storm (connection pool cap + single-flight); creates fail closed (503) rather than risk duplicate ids |
 | Postgres primary down | no new writes; reads served from cache until TTL | replica promotion; cached redirects keep working meanwhile |
 | Worker down | click events queue up, `click_count` stalls | queue buffers; drains on restart; redirects unaffected |
 | Gateway down | total outage (single entry point) | run ≥2 behind a load balancer |
@@ -57,7 +57,8 @@ Consistent hashing recap (interview-grade):
 ## Bottleneck order (what breaks first as you grow)
 
 1. **Redis memory / hit rate** — the working set outgrows one node → Redis cluster.
-2. **Postgres write throughput** — → distributed ids + sharding.
+2. **Postgres write throughput** — → sharding (id generation already handled by the Redis counter, no extra work needed there).
 3. **`clicks` table size** — → time-partitioning + archival (hits first by raw volume, but is off the critical path).
+4. **Redis counter key itself** — theoretical ceiling, unlikely to hit in practice; partition into sub-counters only if `INCR` throughput on one key becomes measurably limiting.
 
 The redirect path is designed so that #2 and #3 never touch it under a healthy cache.
