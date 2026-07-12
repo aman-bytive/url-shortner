@@ -1,3 +1,5 @@
+import { createApiError } from "../utils/apiError.js";
+
 export const validate = (schema) => (req, res, next) => {
     
     const { error, value } = schema.validate(req.body, {
@@ -6,9 +8,7 @@ export const validate = (schema) => (req, res, next) => {
     });
 
     if (error) {
-        return res.status(400).json({
-            message: error.details.map((d) => d.message),
-        });
+        throw createApiError(error.details.map((d) => d.message).join(", "), 400);
     }
 
     req.body = value;
