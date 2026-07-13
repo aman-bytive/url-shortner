@@ -1,5 +1,5 @@
 import { incrCounter } from "../redis/counter.js";
-import { insertUrl } from "../repositories/url.repository.js";
+import { insertUrl, getUrl } from "../repositories/url.repository.js";
 import { base62Encode, scramble } from "../utils/base62.js";
 import { createApiError } from "../utils/apiError.js";
 
@@ -42,3 +42,9 @@ export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) 
         }
     }
 };
+
+export const getUrlByCode = async ({ shortCode }) => {
+    const url = await getUrl({shortCode});
+    if(url == null) throw createApiError("Url not found",404);
+    return url;
+}

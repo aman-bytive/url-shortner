@@ -9,3 +9,11 @@ export const insertUrl = async ({ shortCode, longUrl, isPermanent, expiresAt }) 
     );
     return rows[0];
 };
+
+export const getUrl = async({shortCode}) =>{
+    const {rows} = await pool.query(
+        `SELECT * FROM urls WHERE short_code = $1 and NOT is_deleted`,
+        [shortCode]
+    );
+    return rows[0] ?? null;
+}
