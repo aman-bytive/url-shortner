@@ -21,12 +21,17 @@ export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) 
         }
 
         try {
-            return await insertUrl({
+            const data = await insertUrl({
                 shortCode: code,
                 longUrl,
                 isPermanent: permanent,
                 expiresAt,
             });
+            return {
+                shortCode : data.short_code,
+                shortUrl : `${process.env.BASE_URL}/${data.short_code}`,
+                longUrl : data.long_url
+            }
         } catch (err) {
             if (err.code !== UNIQUE_VIOLATION) throw err;
 
@@ -44,17 +49,17 @@ export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) 
 };
 
 export const getUrlByCode = async ({ shortCode }) => {
-    const url = await getUrl({shortCode});
-    if(url == null) throw createApiError("Url not found",404);
+    const url = await getUrl({ shortCode });
+    if (url == null) throw createApiError("Url not found", 404);
     return url;
 }
 
-export const getAllUrls = async({cursor,pageSize}) =>{
-    return await getUrls({cursor,pageSize});
+export const getAllUrls = async ({ cursor, pageSize }) => {
+    return await getUrls({ cursor, pageSize });
 }
 
-export const softDeleteUrl = async({shortCode}) =>{
-    const url = await deleteUrl({shortCode});
-    if(!url) throw createApiError("NOT_FOUND",404);
+export const softDeleteUrl = async ({ shortCode }) => {
+    const url = await deleteUrl({ shortCode });
+    if (!url) throw createApiError("NOT_FOUND", 404);
     return url;
 }
