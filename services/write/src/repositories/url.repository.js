@@ -10,6 +10,14 @@ export const insertUrl = async ({ shortCode, longUrl, isPermanent, expiresAt }) 
     return rows[0];
 };
 
+export const getUrlByLongUrl = async ({ longUrl }) => {
+    const { rows } = await pool.query(
+        `SELECT * FROM urls WHERE long_url = $1 AND NOT is_deleted`,
+        [longUrl]
+    );
+    return rows[0] ?? null;
+}
+
 export const getUrl = async ({ shortCode }) => {
     const { rows } = await pool.query(
         `SELECT * FROM urls WHERE short_code = $1 and NOT is_deleted`,
