@@ -84,7 +84,7 @@ Standalone service. `POST /urls`.
 
 **Acceptance criteria:**
 - Same long URL submitted twice — decide: dedup to same code, or new code each time? Write down which and why. Test matches your decision.
-- Error shape identical everywhere: `{ "error": { "code": "...", "message": "..." } }`.
+- Error shape identical everywhere: `{ "statusCode": ..., "success": false, "message": "...", "data": null }`.
 - Codes are URL-safe (no `+`, `/`, `=`).
 
 ### Day 2 — Read Service, cold, 35 min

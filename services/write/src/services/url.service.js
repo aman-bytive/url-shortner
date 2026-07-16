@@ -1,5 +1,5 @@
 import { incrCounter } from "../redis/counter.js";
-import { insertUrl, getUrl, getUrls } from "../repositories/url.repository.js";
+import { insertUrl, getUrl, getUrls, deleteUrl } from "../repositories/url.repository.js";
 import { base62Encode, scramble } from "../utils/base62.js";
 import { createApiError } from "../utils/apiError.js";
 
@@ -50,7 +50,11 @@ export const getUrlByCode = async ({ shortCode }) => {
 }
 
 export const getAllUrls = async({cursor,pageSize}) =>{
-    const urls = await getUrls({cursor,pageSize});
-    if(urls == null) throw createApiError("No Urls Yet",404);
-    return urls
+    return await getUrls({cursor,pageSize});
+}
+
+export const softDeleteUrl = async({shortCode}) =>{
+    const url = await deleteUrl({shortCode});
+    if(!url) throw createApiError("NOT_FOUND",404);
+    return url;
 }

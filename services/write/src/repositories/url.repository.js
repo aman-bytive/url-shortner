@@ -20,7 +20,7 @@ export const getUrl = async ({ shortCode }) => {
 
 export const getUrls = async ({ cursor, pageSize }) => {
     const effectiveCursor = cursor ?? 0;
-    const limit = pageSize ?? 10;
+    const limit = Math.min(Number(pageSize)||10 , 100);
     const { rows } = await pool.query(
         `SELECT * from urls WHERE id > $1 and NOT is_deleted
         ORDER BY id ASC LIMIT $2`,
@@ -28,4 +28,13 @@ export const getUrls = async ({ cursor, pageSize }) => {
     );
     const nextCursor = rows.length > 0 ? rows[rows.length - 1].id : null;
     return { rows, nextCursor };
+}
+
+export const deleteUrl = async ({ shortCode }) => {
+    const { rows } = await pool.query(
+        `UPDATE urls SET is_deleted = true WHERE short_code = $1 AND
+        NOT is_deleted RETURNING *`,
+        [shortCode]
+    );
+    return rows[0] ?? null;
 }
