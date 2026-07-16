@@ -8,7 +8,7 @@ export const validate = (schema) => (req, res, next) => {
     });
 
     if (error) {
-        throw createApiError(error.details.map((d) => d.message).join(", "), 400);
+        throw createApiError(error.details.map((d) => d.message).join(", "), 422);
     }
 
     req.body = value;
