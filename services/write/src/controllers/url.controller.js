@@ -1,4 +1,4 @@
-import { shortenUrl,getUrlByCode } from "../services/url.service.js";
+import { shortenUrl,getUrlByCode,getAllUrls } from "../services/url.service.js";
 import { responseHandler } from "../utils/response.js";
 
 export const createShortUrl = async (req, res) => {
@@ -20,4 +20,10 @@ export const getShortUrlByCode = async (req, res) => {
     const result = await getUrlByCode({shortCode});
 
     return responseHandler(result,res,"",200);
+}
+
+export const getAllShortUrl = async (req,res) =>{
+    const {cursor,pageSize} = req.query;
+    const result = await getAllUrls({cursor,pageSize});
+    return responseHandler(result,res,"",200)
 }
