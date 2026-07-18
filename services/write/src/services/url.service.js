@@ -1,19 +1,33 @@
 import { incrCounter } from "../redis/counter.js";
-import { insertUrl, getUrl, getUrls, deleteUrl } from "../repositories/url.repository.js";
+import { insertUrl, getUrl, getUrls, deleteUrl, getUrlByLongUrl } from "../repositories/url.repository.js";
 import { base62Encode, scramble } from "../utils/base62.js";
 import { createApiError } from "../utils/apiError.js";
+import { urlKey } from "../redis/keys.js";
+import { deleteKey } from "../redis/cache.js"
 
 const MAX_RETRIES = 3;
 const UNIQUE_VIOLATION = "23505";
+const LONG_URL_UNIQUE_CONSTRAINT = "urls_long_url_key";
 
 const generateShortCode = async () => {
     const id = await incrCounter("urls:id_counter");
     return base62Encode(scramble(id));
 };
 
+const toResponse = (data) => ({
+    shortCode: data.short_code,
+    shortUrl: `${process.env.BASE_URL}/${data.short_code}`,
+    longUrl: data.long_url,
+});
+
 export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) => {
     const isCustom = Boolean(customCode);
     let code = customCode;
+
+    if (!isCustom) {
+        const existing = await getUrlByLongUrl({ longUrl });
+        if (existing) return toResponse(existing);
+    }
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (!code) {
@@ -27,13 +41,15 @@ export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) 
                 isPermanent: permanent,
                 expiresAt,
             });
-            return {
-                shortCode : data.short_code,
-                shortUrl : `${process.env.BASE_URL}/${data.short_code}`,
-                longUrl : data.long_url
-            }
+            return toResponse(data);
         } catch (err) {
             if (err.code !== UNIQUE_VIOLATION) throw err;
+
+            if (err.constraint === LONG_URL_UNIQUE_CONSTRAINT) {
+                const existing = await getUrlByLongUrl({ longUrl });
+                if (existing) return toResponse(existing);
+                throw err;
+            }
 
             if (isCustom) {
                 throw createApiError("CODE_TAKEN", 409);
@@ -61,5 +77,12 @@ export const getAllUrls = async ({ cursor, pageSize }) => {
 export const softDeleteUrl = async ({ shortCode }) => {
     const url = await deleteUrl({ shortCode });
     if (!url) throw createApiError("NOT_FOUND", 404);
+
+    const key = urlKey(shortCode);
+    try {
+        await deleteKey(key);
+    } catch (error) {
+        console.error("Redis DEL failed, cache may serve stale until TTL:", error);
+    }
     return url;
 }

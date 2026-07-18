@@ -55,6 +55,13 @@ CREATE INDEX IF NOT EXISTS urls_user_recent
     ON urls (user_id, created_at DESC)
     WHERE NOT is_deleted;
 
+-- Dedup: same long_url returns the existing short_code instead of minting a new one.
+-- Partial + NOT is_deleted so a re-shorten after soft-delete gets a fresh code.
+-- Revisit once user_id is enforced (Week 3 auth) — dedup should then scope per-user, not global.
+CREATE UNIQUE INDEX IF NOT EXISTS urls_long_url_key
+    ON urls (long_url)
+    WHERE NOT is_deleted;
+
 -- Append-only click analytics. Written by the worker off the redirect hot path.
 -- No hard FK to urls: decouples write-heavy ingest and avoids lock contention.
 CREATE TABLE IF NOT EXISTS clicks (
