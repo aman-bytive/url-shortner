@@ -2,6 +2,8 @@ import { incrCounter } from "../redis/counter.js";
 import { insertUrl, getUrl, getUrls, deleteUrl, getUrlByLongUrl } from "../repositories/url.repository.js";
 import { base62Encode, scramble } from "../utils/base62.js";
 import { createApiError } from "../utils/apiError.js";
+import { urlKey } from "../redis/keys.js";
+import {deleteKey} from "../redis/cache.js"
 
 const MAX_RETRIES = 3;
 const UNIQUE_VIOLATION = "23505";
@@ -75,5 +77,8 @@ export const getAllUrls = async ({ cursor, pageSize }) => {
 export const softDeleteUrl = async ({ shortCode }) => {
     const url = await deleteUrl({ shortCode });
     if (!url) throw createApiError("NOT_FOUND", 404);
+
+    const key = urlKey(shortCode);
+    await deleteKey(key);
     return url;
 }
