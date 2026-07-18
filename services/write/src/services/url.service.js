@@ -1,24 +1,12 @@
-import { incrCounter } from "../redis/counter.js";
 import { insertUrl, getUrl, getUrls, deleteUrl, getUrlByLongUrl } from "../repositories/url.repository.js";
-import { base62Encode, scramble } from "../utils/base62.js";
 import { createApiError } from "../utils/apiError.js";
 import { urlKey } from "../redis/keys.js";
 import { deleteKey } from "../redis/cache.js"
+import { toResponse, generateShortCode } from "../utils/helper.js";
 
 const MAX_RETRIES = 3;
 const UNIQUE_VIOLATION = "23505";
 const LONG_URL_UNIQUE_CONSTRAINT = "urls_long_url_key";
-
-const generateShortCode = async () => {
-    const id = await incrCounter("urls:id_counter");
-    return base62Encode(scramble(id));
-};
-
-const toResponse = (data) => ({
-    shortCode: data.short_code,
-    shortUrl: `${process.env.BASE_URL}/${data.short_code}`,
-    longUrl: data.long_url,
-});
 
 export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) => {
     const isCustom = Boolean(customCode);
