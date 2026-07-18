@@ -10,10 +10,16 @@ const CACHE_TTL = 3600;
 export const getUrlByCode = async ({ shortCode }) => {
     const key = urlKey(shortCode);
 
-    const cached = await getCachedUrl(key);
-    if (cached) {
-        return toResponse(cached);
+
+
+    let cached = null;
+    try {
+        cached = await getCachedUrl(key);
+    } catch (error) {
+        console.error("Redis GET failed, falling through to DB:", error);
     }
+
+    if (cached) return toResponse(cached);
 
     const url = await getUrl({ shortCode });
     if (!url) throw createApiError("Url not found", 404);
@@ -22,7 +28,11 @@ export const getUrlByCode = async ({ shortCode }) => {
     }
 
     const ttl = ttlFor(url, CACHE_TTL);
-    await setCachedUrl(key, url, ttl);
+    try {
+        await setCachedUrl(key, url, ttl);
+    } catch (error) {
+        console.error("Redis SET failed, skipping write-back:", error);
+    }
 
     return toResponse(url);
 }

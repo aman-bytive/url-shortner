@@ -3,7 +3,7 @@ import { insertUrl, getUrl, getUrls, deleteUrl, getUrlByLongUrl } from "../repos
 import { base62Encode, scramble } from "../utils/base62.js";
 import { createApiError } from "../utils/apiError.js";
 import { urlKey } from "../redis/keys.js";
-import {deleteKey} from "../redis/cache.js"
+import { deleteKey } from "../redis/cache.js"
 
 const MAX_RETRIES = 3;
 const UNIQUE_VIOLATION = "23505";
@@ -79,6 +79,10 @@ export const softDeleteUrl = async ({ shortCode }) => {
     if (!url) throw createApiError("NOT_FOUND", 404);
 
     const key = urlKey(shortCode);
-    await deleteKey(key);
+    try {
+        await deleteKey(key);
+    } catch (error) {
+        console.error("Redis DEL failed, cache may serve stale until TTL:", error);
+    }
     return url;
 }
