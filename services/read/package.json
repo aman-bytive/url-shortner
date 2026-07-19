@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
+    "worker": "node worker.js",
+    "worker:dev": "node --watch worker.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
