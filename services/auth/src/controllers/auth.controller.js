@@ -1,4 +1,4 @@
-import { register,login } from "../services/auth.service.js";
+import { register,login,refresh } from "../services/auth.service.js";
 import { responseHandler } from "../utils/response.js";
 
 export const registerUser = async (req, res) => {
@@ -14,4 +14,11 @@ export const loginUser = async (req, res) => {
 
     const result = await login({ email, password });
     return responseHandler(result, res, "User logged in successfully", 200);
+}
+
+export const refreshToken = async (req, res) => {
+    const { refreshToken } = req.body;
+
+    const result = await refresh({ refreshToken });
+    return responseHandler(result, res, "Token refreshed successfully", 200);
 }
