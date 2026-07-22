@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { getUserByEmail, insertUser, insertRefreshToken,getUserIdByRefreshToken } from "../repositories/auth.repository.js";
+import { getUserByEmail, insertUser, insertRefreshToken, getUserIdByRefreshToken, revokeRefreshToken } from "../repositories/auth.repository.js";
 import { createApiError } from "../utils/apiError.js";
 import { signAccessToken, generateRefreshToken, hashToken } from "../utils/tokens.js";
 
@@ -59,4 +59,13 @@ export const refresh = async ({ refreshToken }) => {
     const accessToken = signAccessToken(userId);
 
     return { accessToken };
+}
+
+export const logout = async ({ refreshToken }) => {
+    const tokenHash = hashToken(refreshToken);
+    const revoked = await revokeRefreshToken(tokenHash);
+    if (!revoked) {
+        throw createApiError('Invalid refresh token', 401);
+    }
+    return null;
 }

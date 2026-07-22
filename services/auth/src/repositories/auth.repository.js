@@ -19,3 +19,11 @@ export const getUserIdByRefreshToken = async (tokenHash) => {
     const { rows } = await pool.query('SELECT user_id FROM refresh_tokens WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL', [tokenHash]);
     return rows[0] ? rows[0].user_id : null;
 }
+
+export const revokeRefreshToken = async (tokenHash) => {
+    const { rows } = await pool.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id',
+        [tokenHash]
+    );
+    return rows[0] ?? null;
+}
