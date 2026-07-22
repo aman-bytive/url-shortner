@@ -6,14 +6,14 @@ import { toResponse, generateShortCode } from "../utils/helper.js";
 
 const MAX_RETRIES = 3;
 const UNIQUE_VIOLATION = "23505";
-const LONG_URL_UNIQUE_CONSTRAINT = "urls_long_url_key";
+const LONG_URL_UNIQUE_CONSTRAINT = "urls_user_long_url_key";
 
 export const shortenUrl = async ({ userId, longUrl, customCode, permanent, expiresAt }) => {
     const isCustom = Boolean(customCode);
     let code = customCode;
 
     if (!isCustom) {
-        const existing = await getUrlByLongUrl({ longUrl });
+        const existing = await getUrlByLongUrl({ userId, longUrl });
         if (existing) return toResponse(existing);
     }
 
@@ -35,7 +35,7 @@ export const shortenUrl = async ({ userId, longUrl, customCode, permanent, expir
             if (err.code !== UNIQUE_VIOLATION) throw err;
 
             if (err.constraint === LONG_URL_UNIQUE_CONSTRAINT) {
-                const existing = await getUrlByLongUrl({ longUrl });
+                const existing = await getUrlByLongUrl({ userId, longUrl });
                 if (existing) return toResponse(existing);
                 throw err;
             }
