@@ -8,7 +8,7 @@ const MAX_RETRIES = 3;
 const UNIQUE_VIOLATION = "23505";
 const LONG_URL_UNIQUE_CONSTRAINT = "urls_long_url_key";
 
-export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) => {
+export const shortenUrl = async ({ userId, longUrl, customCode, permanent, expiresAt }) => {
     const isCustom = Boolean(customCode);
     let code = customCode;
 
@@ -24,6 +24,7 @@ export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) 
 
         try {
             const data = await insertUrl({
+                userId,
                 shortCode: code,
                 longUrl,
                 isPermanent: permanent,
@@ -52,18 +53,18 @@ export const shortenUrl = async ({ longUrl, customCode, permanent, expiresAt }) 
     }
 };
 
-export const getUrlByCode = async ({ shortCode }) => {
-    const url = await getUrl({ shortCode });
+export const getUrlByCode = async ({ shortCode, userId }) => {
+    const url = await getUrl({ shortCode, userId });
     if (url == null) throw createApiError("Url not found", 404);
     return url;
 }
 
-export const getAllUrls = async ({ cursor, pageSize }) => {
-    return await getUrls({ cursor, pageSize });
+export const getAllUrls = async ({ userId, cursor, pageSize }) => {
+    return await getUrls({ userId, cursor, pageSize });
 }
 
-export const softDeleteUrl = async ({ shortCode }) => {
-    const url = await deleteUrl({ shortCode });
+export const softDeleteUrl = async ({ shortCode, userId }) => {
+    const url = await deleteUrl({ shortCode, userId });
     if (!url) throw createApiError("NOT_FOUND", 404);
 
     const key = urlKey(shortCode);
