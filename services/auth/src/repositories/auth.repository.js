@@ -14,3 +14,8 @@ export const insertRefreshToken = async ({ userId, tokenHash, expiresAt }) => {
     const { rows } = await pool.query('INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3) RETURNING *', [userId, tokenHash, expiresAt]);
     return rows[0];
 }
+
+export const getUserIdByRefreshToken = async (tokenHash) => {
+    const { rows } = await pool.query('SELECT user_id FROM refresh_tokens WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL', [tokenHash]);
+    return rows[0] ? rows[0].user_id : null;
+}

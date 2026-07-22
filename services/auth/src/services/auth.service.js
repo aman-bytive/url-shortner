@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
-import { getUserByEmail, insertUser, insertRefreshToken } from "../repositories/auth.repository.js";
+import { getUserByEmail, insertUser, insertRefreshToken,getUserIdByRefreshToken } from "../repositories/auth.repository.js";
 import { createApiError } from "../utils/apiError.js";
-import { signAccessToken,generateRefreshToken,hashToken } from "../utils/tokens.js";
+import { signAccessToken, generateRefreshToken, hashToken } from "../utils/tokens.js";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -44,7 +44,19 @@ export const login = async ({ email, password }) => {
     const tokenHash = hashToken(rawRefreshToken);
     const expiresAt = new Date(Date.now() + Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) * 24 * 60 * 60 * 1000);
     await insertRefreshToken({ userId: user.id, tokenHash, expiresAt });
-    
+
     const { password_hash, ...safeUser } = user;
-    return { ...safeUser, accessToken ,refreshToken: rawRefreshToken};
+    return { ...safeUser, accessToken, refreshToken: rawRefreshToken };
+}
+
+export const refresh = async ({ refreshToken }) => {
+    const tokenHash = hashToken(refreshToken);
+    const userId = await getUserIdByRefreshToken(tokenHash);
+    if (!userId) {
+        throw createApiError('Invalid refresh token', 401);
+    }
+
+    const accessToken = signAccessToken(userId);
+
+    return { accessToken };
 }
