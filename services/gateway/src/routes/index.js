@@ -8,13 +8,19 @@ const router = Router();
 
 router.use('/auth', rateLimiter(WRITE_BUCKET), createProxyMiddleware({
     target: process.env.AUTH_SERVICE_URL,
-    changeOrigin: true
+    changeOrigin: true,
+    pathRewrite: { '^/': '/auth/' }
 }));
 
 router.use('/urls', verifyToken, rateLimiter(WRITE_BUCKET), createProxyMiddleware({
     target: process.env.WRITE_SERVICE_URL,
     changeOrigin: true,
-    pathRewrite: { '^/': '/api/v1/urls/' }
+    pathRewrite: { '^/': '/api/v1/urls/' },
+    on: {
+        proxyReq: (proxyReq, req) => {
+            proxyReq.setHeader('X-User-Id', req.user.id);
+        }
+    }
 }));
 
 router.use('/', rateLimiter(READ_BUCKET), createProxyMiddleware({

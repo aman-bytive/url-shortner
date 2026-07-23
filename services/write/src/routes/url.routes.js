@@ -1,14 +1,17 @@
 import { Router } from "express";
 import { validate } from "../middlewares/validate.js";
+import { trustGatewayUser } from "../middlewares/trustGatewayUser.js";
 import { createUrlSchema } from "../validators/url.validator.js";
 import {
     createShortUrl,
     getShortUrlByCode,
     getAllShortUrl,
-    deleteShortUrl 
+    deleteShortUrl
 } from "../controllers/url.controller.js";
 
 const router = Router();
+
+router.use(trustGatewayUser);
 
 router
     .route('/')

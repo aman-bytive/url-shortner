@@ -2,7 +2,7 @@ import { shortenUrl, getUrlByCode, getAllUrls, softDeleteUrl } from "../services
 import { responseHandler } from "../utils/response.js";
 
 export const createShortUrl = async (req, res) => {
-    const { longUrl, customCode, permanent, expiresAt } = req.value;
+    const { longUrl, customCode, permanent, expiresAt } = req.body;
 
     const userId = req.user.id;
 

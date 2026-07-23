@@ -27,7 +27,7 @@ export const getUrl = async ({ shortCode, userId }) => {
 }
 
 export const getUrls = async ({ userId, cursor, pageSize }) => {
-    const effectiveCursor = Number(cursor) ?? 0;
+    const effectiveCursor = Number(cursor ?? 0);
     const limit = Math.max(1, Math.min(Number(pageSize) || 10, 100));
     const { rows } = await pool.query(
         `SELECT * from urls WHERE id > $1 and NOT is_deleted and user_id = $2

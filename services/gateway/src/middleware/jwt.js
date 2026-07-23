@@ -9,10 +9,11 @@ const verifyToken = async (req, res, next) => {
         const token = authHeader.split(" ")[1];
 
         const decode = jwt.verify(token, secretKey);
-        req.user = decode;
+        req.user = { id: decode.userId };
 
         next();
     } catch (error) {
+        if (error.isApiError) throw error;
         throw createApiError("Invalid or expired token", 401);
     }
 }
